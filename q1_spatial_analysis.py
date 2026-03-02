@@ -1,53 +1,45 @@
 import geopandas as gpd
-import matplotlib.pyplot as plt
-from shapely.geometry import box
-import numpy as np
+import os
+import pandas as pd
+from shapely.geometry import Point
 
-# Loading NCR Boundary
-ncr = gpd.read_file(r"Delhi-Airshed-LandUse-AI-Audit\delhi_ncr_region.geojson")
+# ---------------------------
+# LOAD NCR FIRST
+# ---------------------------
+ncr = gpd.read_file("Delhi-Airshed-LandUse-AI-Audit\\delhi_ncr_region.geojson")
 
-print("Original CRS:", ncr.crs)
+# ---------------------------
+# IMAGE FILTERING
+# ---------------------------
+image_folder = "Delhi-Airshed-LandUse-AI-Audit\\rgb"
+image_files = os.listdir(image_folder)
 
-# Reprojecting to UTM
-ncr_utm = ncr.to_crs(epsg=32644)
+print("Total images before filtering:", len(image_files))
 
-print("Reprojected CRS:", ncr_utm.crs)
+# Compute union ONCE
+ncr_polygon = ncr.union_all()
 
-# Creating 60x60 km Grid
-# Get bounding box (in meters)
-minx, miny, maxx, maxy = ncr_utm.total_bounds
+filtered_images = []
 
-print("Bounding Box (meters):")
-print(minx, miny, maxx, maxy)
+for img in image_files:
+    
+    name = img.replace(".png", "")
+    
+    try:
+        lat, lon = name.split("_")
+        lat = float(lat)
+        lon = float(lon)
+    except:
+        continue
 
-grid_size = 60000  # 60 km in meters
+    point = Point(lon, lat)
 
-grid_cells = []
+    if point.within(ncr_polygon):
+        filtered_images.append([img, lat, lon])
 
-for x in np.arange(minx, maxx, grid_size):
-    for y in np.arange(miny, maxy, grid_size):
-        grid_cells.append(box(x, y, x + grid_size, y + grid_size))
+print("Filtered images count:", len(filtered_images))
 
-grid = gpd.GeoDataFrame({'geometry': grid_cells}, crs="EPSG:32644")
+df_filtered = pd.DataFrame(filtered_images, columns=["filename", "latitude", "longitude"])
+df_filtered.to_csv("filtered_images.csv", index=False)
 
-print("Total grid cells created:", len(grid))
-
-# Keeping only grid cells that intersect NCR
-grid = grid[grid.intersects(ncr_utm.union_all())]
-
-print("Grid cells after intersection:", len(grid))
-
-# ploting grgid overlay
-
-fig, ax = plt.subplots(figsize=(8,8))
-
-ncr_utm.plot(ax=ax, edgecolor='black', facecolor='none')
-grid.plot(ax=ax, edgecolor='red', facecolor='none', linewidth=1)
-
-plt.title("60x60 km Grid Overlay on Delhi-NCR")
-
-plt.tight_layout()
-plt.savefig("grid_overlay.png", dpi=300)
-plt.close()
-
-print("Grid overlay image saved as grid_overlay.png")
+print("filtered_images.csv created successfully!")
